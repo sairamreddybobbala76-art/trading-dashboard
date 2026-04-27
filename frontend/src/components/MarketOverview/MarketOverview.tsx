@@ -213,55 +213,126 @@ function Top10Table({ stocks, onSelect }: { stocks: Top10Quote[]; onSelect: (t: 
   )
 }
 
+const WAKE_MESSAGES = [
+  'Connecting to market data…',
+  'Backend is waking up (free tier — takes ~30s)…',
+  'Still loading, almost there…',
+  'Fetching live quotes…',
+]
+
 interface Props { onSelectTicker: (t: string) => void }
 
 export function MarketOverview({ onSelectTicker }: Props) {
-  const [data, setData]     = useState<MarketOverviewData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [data, setData]           = useState<MarketOverviewData | null>(null)
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState(false)
+  const [wakeMsg, setWakeMsg]     = useState(0)
+  const [elapsed, setElapsed]     = useState(0)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [countdown, setCountdown]   = useState(REFRESH_INTERVAL / 1000)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const activeRef = useRef(false)  // prevents concurrent loads
 
-  async function load() {
+  // Returns true on success
+  async function fetchOnce(): Promise<boolean> {
     try {
       const d = await api.marketOverview()
       setData(d)
       setLastUpdate(new Date())
       setCountdown(REFRESH_INTERVAL / 1000)
-    } catch (e) {
-      console.error('Market overview error', e)
-    } finally {
-      setLoading(false)
+      setError(false)
+      return true
+    } catch {
+      return false
     }
+  }
+
+  async function load() {
+    if (activeRef.current) return
+    activeRef.current = true
+    setLoading(true)
+    setError(false)
+    setElapsed(0)
+    setWakeMsg(0)
+
+    const MAX_ATTEMPTS = 6
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      const ok = await fetchOnce()
+      if (ok) break
+      if (i < MAX_ATTEMPTS - 1) {
+        setWakeMsg(Math.min(i + 1, WAKE_MESSAGES.length - 1))
+        await new Promise<void>(r => setTimeout(r, 8000))
+      } else {
+        setError(true)
+      }
+    }
+
+    setLoading(false)
+    activeRef.current = false
+  }
+
+  async function refresh() {
+    if (activeRef.current) return
+    activeRef.current = true
+    await fetchOnce()
+    setCountdown(REFRESH_INTERVAL / 1000)
+    activeRef.current = false
   }
 
   useEffect(() => {
     load()
-    const interval = setInterval(load, REFRESH_INTERVAL)
+    const interval = setInterval(refresh, REFRESH_INTERVAL)
     return () => clearInterval(interval)
   }, [])
 
+  // Elapsed seconds while loading
+  useEffect(() => {
+    if (!loading) return
+    setElapsed(0)
+    const t = setInterval(() => setElapsed(e => e + 1), 1000)
+    return () => clearInterval(t)
+  }, [loading])
+
   // Countdown ticker
   useEffect(() => {
-    timerRef.current = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000)
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+    const t = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000)
+    return () => clearInterval(t)
   }, [lastUpdate])
 
   if (loading) {
     return (
-      <div className="flex flex-col h-full items-center justify-center gap-3">
-        <RefreshCw size={22} className="text-accent animate-spin" />
-        <p className="text-muted text-sm">Loading market data…</p>
+      <div className="flex flex-col h-full items-center justify-center gap-4">
+        <RefreshCw size={24} className="text-accent animate-spin" />
+        <p className="text-text text-sm font-semibold">{WAKE_MESSAGES[wakeMsg]}</p>
+        {elapsed > 5 && (
+          <p className="text-muted text-xs">
+            {elapsed}s elapsed — Render free tier takes up to 60s to wake from sleep
+          </p>
+        )}
+        {elapsed > 10 && (
+          <button
+            onClick={load}
+            className="text-xs text-accent border border-accent/30 px-3 py-1 rounded hover:bg-accent/10 transition-colors"
+          >
+            Retry now
+          </button>
+        )}
       </div>
     )
   }
 
-  if (!data) {
+  if (error || !data) {
     return (
-      <div className="flex flex-col h-full items-center justify-center gap-2">
+      <div className="flex flex-col h-full items-center justify-center gap-3">
         <AlertTriangle size={22} className="text-bear" />
-        <p className="text-muted text-sm">Failed to load market data</p>
-        <button onClick={load} className="text-xs text-accent hover:underline">Retry</button>
+        <p className="text-text text-sm font-semibold">Could not reach the backend</p>
+        <p className="text-muted text-xs">Make sure the backend is running on port 8000</p>
+        <p className="text-muted text-xs font-mono">uvicorn main:app --host 127.0.0.1 --port 8000</p>
+        <button
+          onClick={load}
+          className="mt-1 text-xs text-accent border border-accent/30 px-4 py-1.5 rounded hover:bg-accent/10 transition-colors"
+        >
+          Try again
+        </button>
       </div>
     )
   }
@@ -289,7 +360,7 @@ export function MarketOverview({ onSelectTicker }: Props) {
             Refreshes in <span className="text-accent font-mono">{countdown}s</span>
           </span>
           <button
-            onClick={load}
+            onClick={refresh}
             className="flex items-center gap-1 text-xs text-muted hover:text-accent transition-colors"
           >
             <RefreshCw size={11} /> Refresh
