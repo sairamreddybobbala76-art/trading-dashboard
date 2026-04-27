@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Activity, Wifi, WifiOff, Search, Radio, BarChart2 } from 'lucide-react'
+import { Activity, Wifi, WifiOff, Search, Radio, BarChart2, Globe } from 'lucide-react'
 
-export type ViewMode = 'chart' | 'scanner'
+export type ViewMode = 'chart' | 'scanner' | 'market'
 
 interface Props {
   ticker: string
@@ -49,29 +49,24 @@ export function Header({
 
       {/* View toggle */}
       <div className="flex items-center bg-base rounded-lg p-0.5 border border-muted/20 flex-shrink-0">
-        <button
-          onClick={() => onViewChange('chart')}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${
-            view === 'chart'
-              ? 'bg-accent/20 text-accent'
-              : 'text-muted hover:text-text'
-          }`}
-        >
-          <BarChart2 size={12} /> Chart
-        </button>
-        <button
-          onClick={() => onViewChange('scanner')}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${
-            view === 'scanner'
-              ? 'bg-accent/20 text-accent'
-              : 'text-muted hover:text-text'
-          }`}
-        >
-          <Radio size={12} /> Scanner
-        </button>
+        {([
+          { id: 'chart',   label: 'Chart',   icon: <BarChart2 size={12} /> },
+          { id: 'market',  label: 'Market',  icon: <Globe     size={12} /> },
+          { id: 'scanner', label: 'Scanner', icon: <Radio     size={12} /> },
+        ] as const).map(({ id, label, icon }) => (
+          <button
+            key={id}
+            onClick={() => onViewChange(id)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+              view === id ? 'bg-accent/20 text-accent' : 'text-muted hover:text-text'
+            }`}
+          >
+            {icon} {label}
+          </button>
+        ))}
       </div>
 
-      {/* Ticker Search — hidden in scanner view */}
+      {/* Ticker Search — only shown in chart view */}
       {view === 'chart' && (
         <>
           <form onSubmit={submit} className="flex items-center gap-2">

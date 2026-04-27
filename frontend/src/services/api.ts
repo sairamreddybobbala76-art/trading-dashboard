@@ -1,4 +1,4 @@
-import type { CandlestickBar, Technicals, AISuggestion, RiskResult, NewsItem, ScanResponse } from '../types'
+import type { CandlestickBar, Technicals, AISuggestion, RiskResult, NewsItem, ScanResponse, MarketOverview } from '../types'
 
 // Dev: empty string → Vite proxy forwards /api/* to localhost:8000
 // Prod: set VITE_API_URL=https://your-app.onrender.com in Vercel env vars
@@ -48,6 +48,8 @@ export const api = {
   scan: () => get<ScanResponse>('/scanner/scan'),
 
   clearScanCache: () => fetch(`${BASE}/scanner/cache`, { method: 'DELETE' }),
+
+  marketOverview: () => get<MarketOverview>('/market/overview'),
 }
 
 // Derive WebSocket base from API URL

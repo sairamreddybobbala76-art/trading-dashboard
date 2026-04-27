@@ -135,6 +135,45 @@ export interface ScanResult {
   reasons: string[]
 }
 
+// ── Market Overview ────────────────────────────────────────────────────────
+export interface Quote {
+  ticker: string
+  price: number
+  prev_close: number
+  change: number
+  change_pct: number
+  day_high: number
+  day_low: number
+  volume: number
+  direction: 'up' | 'down' | 'flat'
+  error?: string
+}
+
+export interface Top10Quote extends Quote {
+  company: string
+  spy_weight: number
+}
+
+export interface SectorQuote extends Quote {
+  name: string
+  etf: string
+}
+
+export interface VixData extends Quote {
+  zone: string
+  color: string
+}
+
+export interface MarketOverview {
+  indices: Quote[]
+  vix: VixData
+  top10: Top10Quote[]
+  sectors: SectorQuote[]
+  market_bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL'
+  breadth: { up: number; down: number; total: number }
+  timestamp: number
+}
+
 export interface ScanResponse {
   scanned: number
   scan_time: string

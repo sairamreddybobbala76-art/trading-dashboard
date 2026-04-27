@@ -5,6 +5,7 @@ import { AIAssistant } from '../Sidebar/AIAssistant'
 import { NewsFeed } from '../News/NewsFeed'
 import { RiskCalculator } from '../RiskManager/RiskCalculator'
 import { StockScanner } from '../Scanner/StockScanner'
+import { MarketOverview } from '../MarketOverview/MarketOverview'
 import { Header, type ViewMode } from './Header'
 import { usePriceFeed } from '../../hooks/useWebSocket'
 import { api } from '../../services/api'
@@ -91,6 +92,13 @@ export function Dashboard() {
         view={view}
         onViewChange={setView}
       />
+
+      {/* ── Market Pulse view ─────────────────────────────────────────── */}
+      {view === 'market' && (
+        <div className="flex-1 overflow-hidden">
+          <MarketOverview onSelectTicker={handleScannerSelect} />
+        </div>
+      )}
 
       {/* ── Scanner view (full-width) ──────────────────────────────────── */}
       {view === 'scanner' && (

@@ -7,7 +7,7 @@ import yfinance as yf
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import market_data, ai_engine, news, risk_manager, scanner
+from routers import market_data, ai_engine, news, risk_manager, scanner, market_overview
 
 
 @asynccontextmanager
@@ -40,6 +40,7 @@ app.include_router(ai_engine.router)
 app.include_router(news.router)
 app.include_router(risk_manager.router)
 app.include_router(scanner.router)
+app.include_router(market_overview.router)
 
 
 class ConnectionManager:
