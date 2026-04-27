@@ -5,7 +5,7 @@ import type { MarketOverview as MarketOverviewData, Quote, Top10Quote, SectorQuo
 
 const REFRESH_INTERVAL = 15_000
 
-function fmt(n: number, dec = 2) { return n?.toFixed(dec) ?? '—' }
+function fmt(n: number, dec = 2) { return (n ?? 0).toFixed(dec) }
 function fmtVol(n: number) {
   if (!n) return '—'
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -66,7 +66,7 @@ function IndexCard({ q, label }: { q: Quote; label?: string }) {
 }
 
 function VixGauge({ vix }: { vix: MarketOverviewData['vix'] }) {
-  const val = vix.price ?? 0
+  const val  = vix.price ?? 0
   const pct  = Math.min(100, (val / 50) * 100)
   const color = vix.color === 'bull' ? '#22c55e' : vix.color === 'warn' ? '#f59e0b' : '#ef4444'
   return (
@@ -79,7 +79,7 @@ function VixGauge({ vix }: { vix: MarketOverviewData['vix'] }) {
       <div className="h-2 bg-muted/20 rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-500"
-          style={{ width: `${pct}%`, background: `linear-gradient(90deg, #22c55e, #f59e0b, #ef4444)` }}
+          style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #22c55e, #f59e0b, #ef4444)' }}
         />
       </div>
       <div className="flex justify-between text-xs text-muted">
@@ -92,7 +92,7 @@ function VixGauge({ vix }: { vix: MarketOverviewData['vix'] }) {
 }
 
 function MarketBiasCard({ bias, breadth }: { bias: string; breadth: MarketOverviewData['breadth'] }) {
-  const Icon = bias === 'BULLISH' ? TrendingUp : bias === 'BEARISH' ? TrendingDown : Minus
+  const Icon  = bias === 'BULLISH' ? TrendingUp : bias === 'BEARISH' ? TrendingDown : Minus
   const color = bias === 'BULLISH' ? 'text-bull' : bias === 'BEARISH' ? 'text-bear' : 'text-warn'
   const upPct = breadth.total ? Math.round((breadth.up / breadth.total) * 100) : 0
   return (
@@ -116,9 +116,9 @@ function MarketBiasCard({ bias, breadth }: { bias: string; breadth: MarketOvervi
 
 function SectorBar({ sectors }: { sectors: SectorQuote[] }) {
   const sorted = [...sectors].sort((a, b) => b.change_pct - a.change_pct)
-  const max = Math.max(...sorted.map(s => Math.abs(s.change_pct)), 0.01)
+  const max    = Math.max(...sorted.map(s => Math.abs(s.change_pct)), 0.01)
   return (
-    <div className="bg-surface border border-muted/20 rounded-xl px-4 py-3 flex flex-col gap-2">
+    <div className="bg-surface border border-muted/20 rounded-xl px-4 py-3 flex flex-col gap-2 h-full">
       <div className="flex items-center gap-2">
         <Zap size={13} className="text-accent" />
         <span className="text-xs font-bold text-text">Sector Performance</span>
@@ -213,33 +213,52 @@ function Top10Table({ stocks, onSelect }: { stocks: Top10Quote[]; onSelect: (t: 
   )
 }
 
-const WAKE_MESSAGES = [
-  'Connecting to market data…',
-  'Backend is waking up (free tier — takes ~30s)…',
-  'Still loading, almost there…',
-  'Fetching live quotes…',
-]
+function SpyTip({ spy, vix, bias }: { spy: Quote; vix: MarketOverviewData['vix']; bias: string }) {
+  const tips: string[] = []
+  const spyUp = spy.change_pct > 0
+  if (vix.price > 25)              tips.push('High VIX — expect large intraday swings. Widen stops or reduce size.')
+  if (vix.price < 15)              tips.push('VIX is low — options are cheap. Directional plays have good R/R.')
+  if (Math.abs(spy.change_pct) > 1) tips.push(`SPY moving ${spyUp ? 'strongly up' : 'strongly down'} ${Math.abs(spy.change_pct).toFixed(1)}% — trend-follow, don't fade.`)
+  if (bias === 'BULLISH' && spyUp)  tips.push('Market uptrend. Favour long setups; avoid shorting strong stocks.')
+  if (bias === 'BEARISH' && !spyUp) tips.push('Market downtrend. Stay light on longs; focus on short weak sectors.')
+  if (bias === 'NEUTRAL')           tips.push('Market is choppy. Focus on individual stock catalysts, not broad direction.')
+  if (spy.price < spy.day_low * 1.002)  tips.push('SPY near day low — watch for a flush or reversal candle.')
+  if (spy.price > spy.day_high * 0.998) tips.push('SPY near day high — breakout possible or fade risk. Wait for confirmation.')
+  if (tips.length === 0) return null
+  return (
+    <div className="bg-accent/5 border border-accent/20 rounded-xl px-4 py-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Zap size={13} className="text-accent" />
+        <span className="text-xs font-bold text-accent">Day Trading Insights</span>
+      </div>
+      <ul className="space-y-1">
+        {tips.map((t, i) => (
+          <li key={i} className="text-xs text-text flex gap-2">
+            <span className="text-accent flex-shrink-0">›</span><span>{t}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// ── Main component ──────────────────────────────────────────────────────────
 
 interface Props { onSelectTicker: (t: string) => void }
 
 export function MarketOverview({ onSelectTicker }: Props) {
-  const [data, setData]           = useState<MarketOverviewData | null>(null)
-  const [loading, setLoading]     = useState(true)
-  const [error, setError]         = useState(false)
-  const [wakeMsg, setWakeMsg]     = useState(0)
-  const [elapsed, setElapsed]     = useState(0)
+  const [data, setData]             = useState<MarketOverviewData | null>(null)
+  const [loading, setLoading]       = useState(true)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [countdown, setCountdown]   = useState(REFRESH_INTERVAL / 1000)
-  const activeRef = useRef(false)  // prevents concurrent loads
+  const activeRef = useRef(false)
 
-  // Returns true on success
   async function fetchOnce(): Promise<boolean> {
     try {
       const d = await api.marketOverview()
       setData(d)
       setLastUpdate(new Date())
       setCountdown(REFRESH_INTERVAL / 1000)
-      setError(false)
       return true
     } catch {
       return false
@@ -250,22 +269,7 @@ export function MarketOverview({ onSelectTicker }: Props) {
     if (activeRef.current) return
     activeRef.current = true
     setLoading(true)
-    setError(false)
-    setElapsed(0)
-    setWakeMsg(0)
-
-    const MAX_ATTEMPTS = 6
-    for (let i = 0; i < MAX_ATTEMPTS; i++) {
-      const ok = await fetchOnce()
-      if (ok) break
-      if (i < MAX_ATTEMPTS - 1) {
-        setWakeMsg(Math.min(i + 1, WAKE_MESSAGES.length - 1))
-        await new Promise<void>(r => setTimeout(r, 8000))
-      } else {
-        setError(true)
-      }
-    }
-
+    await fetchOnce()
     setLoading(false)
     activeRef.current = false
   }
@@ -274,25 +278,15 @@ export function MarketOverview({ onSelectTicker }: Props) {
     if (activeRef.current) return
     activeRef.current = true
     await fetchOnce()
-    setCountdown(REFRESH_INTERVAL / 1000)
     activeRef.current = false
   }
 
   useEffect(() => {
     load()
-    const interval = setInterval(refresh, REFRESH_INTERVAL)
-    return () => clearInterval(interval)
+    const iv = setInterval(refresh, REFRESH_INTERVAL)
+    return () => clearInterval(iv)
   }, [])
 
-  // Elapsed seconds while loading
-  useEffect(() => {
-    if (!loading) return
-    setElapsed(0)
-    const t = setInterval(() => setElapsed(e => e + 1), 1000)
-    return () => clearInterval(t)
-  }, [loading])
-
-  // Countdown ticker
   useEffect(() => {
     const t = setInterval(() => setCountdown(c => Math.max(0, c - 1)), 1000)
     return () => clearInterval(t)
@@ -300,51 +294,40 @@ export function MarketOverview({ onSelectTicker }: Props) {
 
   if (loading) {
     return (
-      <div className="flex flex-col h-full items-center justify-center gap-4">
-        <RefreshCw size={24} className="text-accent animate-spin" />
-        <p className="text-text text-sm font-semibold">{WAKE_MESSAGES[wakeMsg]}</p>
-        {elapsed > 5 && (
-          <p className="text-muted text-xs">
-            {elapsed}s elapsed — Render free tier takes up to 60s to wake from sleep
-          </p>
-        )}
-        {elapsed > 10 && (
-          <button
-            onClick={load}
-            className="text-xs text-accent border border-accent/30 px-3 py-1 rounded hover:bg-accent/10 transition-colors"
-          >
-            Retry now
-          </button>
-        )}
+      <div className="flex flex-col h-full items-center justify-center gap-3">
+        <RefreshCw size={22} className="text-accent animate-spin" />
+        <p className="text-muted text-sm">Loading market data…</p>
       </div>
     )
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <div className="flex flex-col h-full items-center justify-center gap-3">
         <AlertTriangle size={22} className="text-bear" />
         <p className="text-text text-sm font-semibold">Could not reach the backend</p>
-        <p className="text-muted text-xs">Make sure the backend is running on port 8000</p>
-        <p className="text-muted text-xs font-mono">uvicorn main:app --host 127.0.0.1 --port 8000</p>
+        <p className="text-muted text-xs">Start the backend, then click retry:</p>
+        <code className="text-xs text-accent bg-surface px-3 py-1.5 rounded border border-muted/20">
+          cd backend &amp;&amp; uvicorn main:app --reload
+        </code>
         <button
           onClick={load}
           className="mt-1 text-xs text-accent border border-accent/30 px-4 py-1.5 rounded hover:bg-accent/10 transition-colors"
         >
-          Try again
+          Retry
         </button>
       </div>
     )
   }
 
-  const spy = data.indices.find(i => i.ticker === 'SPY')!
-  const qqq = data.indices.find(i => i.ticker === 'QQQ')!
-  const iwm = data.indices.find(i => i.ticker === 'IWM')!
-  const dia = data.indices.find(i => i.ticker === 'DIA')!
+  const spy = data.indices.find(i => i.ticker === 'SPY') ?? data.indices[0]
+  const qqq = data.indices.find(i => i.ticker === 'QQQ') ?? data.indices[1]
+  const iwm = data.indices.find(i => i.ticker === 'IWM') ?? data.indices[2]
+  const dia = data.indices.find(i => i.ticker === 'DIA') ?? data.indices[3]
 
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-base">
-      {/* ── Header bar ─────────────────────────────────────────── */}
+      {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-surface border-b border-muted/20 flex-shrink-0">
         <div className="flex items-center gap-2">
           <Zap size={14} className="text-accent" />
@@ -359,22 +342,17 @@ export function MarketOverview({ onSelectTicker }: Props) {
           <span className="text-xs text-muted">
             Refreshes in <span className="text-accent font-mono">{countdown}s</span>
           </span>
-          <button
-            onClick={refresh}
-            className="flex items-center gap-1 text-xs text-muted hover:text-accent transition-colors"
-          >
+          <button onClick={refresh} className="flex items-center gap-1 text-xs text-muted hover:text-accent transition-colors">
             <RefreshCw size={11} /> Refresh
           </button>
           {lastUpdate && (
-            <span className="text-xs text-muted hidden sm:block">
-              {lastUpdate.toLocaleTimeString()}
-            </span>
+            <span className="text-xs text-muted hidden sm:block">{lastUpdate.toLocaleTimeString()}</span>
           )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* ── Index tiles ─────────────────────────────────────── */}
+        {/* Index tiles */}
         <div className="flex gap-3 overflow-x-auto pb-1">
           <IndexCard q={spy} label="SPY — S&P 500" />
           <IndexCard q={qqq} label="QQQ — Nasdaq" />
@@ -382,57 +360,21 @@ export function MarketOverview({ onSelectTicker }: Props) {
           <IndexCard q={dia} label="DIA — Dow Jones" />
         </div>
 
-        {/* ── Gauges row ──────────────────────────────────────── */}
+        {/* Gauges */}
         <div className="flex gap-3 overflow-x-auto pb-1">
           <VixGauge vix={data.vix} />
           <MarketBiasCard bias={data.market_bias} breadth={data.breadth} />
-          <div className="flex-1">
+          <div className="flex-1 min-w-[280px]">
             <SectorBar sectors={data.sectors} />
           </div>
         </div>
 
-        {/* ── SPY trading tip ─────────────────────────────────── */}
+        {/* Day trading tips */}
         <SpyTip spy={spy} vix={data.vix} bias={data.market_bias} />
 
-        {/* ── Top 10 table ────────────────────────────────────── */}
-        <Top10Table
-          stocks={data.top10}
-          onSelect={(t) => { onSelectTicker(t) }}
-        />
+        {/* Top 10 table */}
+        <Top10Table stocks={data.top10} onSelect={onSelectTicker} />
       </div>
-    </div>
-  )
-}
-
-function SpyTip({ spy, vix, bias }: { spy: Quote; vix: MarketOverviewData['vix']; bias: string }) {
-  const tips: string[] = []
-  const spyUp = spy.change_pct > 0
-
-  if (vix.price > 25) tips.push('High VIX — expect large intraday swings. Widen stops or reduce size.')
-  if (vix.price < 15) tips.push('VIX is low — options are cheap. Directional plays have good R/R.')
-  if (Math.abs(spy.change_pct) > 1) tips.push(`SPY moving ${spy.change_pct > 0 ? 'strongly up' : 'strongly down'} ${Math.abs(spy.change_pct).toFixed(1)}% — trend-follow, don't fade.`)
-  if (bias === 'BULLISH' && spyUp) tips.push('Market is in uptrend. Favour long setups; avoid shorting strong stocks.')
-  if (bias === 'BEARISH' && !spyUp) tips.push('Market is in downtrend. Stay light on longs; short weak sectors.')
-  if (bias === 'NEUTRAL') tips.push('Market is choppy. Focus on individual stock catalysts, not broad direction.')
-  if (spy.price < spy.day_low * 1.002) tips.push('SPY near day low — watch for a flush or reversal candle.')
-  if (spy.price > spy.day_high * 0.998) tips.push('SPY near day high — breakout possible or fade risk. Wait for confirmation.')
-
-  if (tips.length === 0) return null
-
-  return (
-    <div className="bg-accent/5 border border-accent/20 rounded-xl px-4 py-3">
-      <div className="flex items-center gap-2 mb-2">
-        <Zap size={13} className="text-accent" />
-        <span className="text-xs font-bold text-accent">Day Trading Insights</span>
-      </div>
-      <ul className="space-y-1">
-        {tips.map((t, i) => (
-          <li key={i} className="text-xs text-text flex gap-2">
-            <span className="text-accent flex-shrink-0">›</span>
-            <span>{t}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   )
 }
