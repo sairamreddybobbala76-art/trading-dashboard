@@ -1,68 +1,123 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api } from '../../services/api'
 import type { AISuggestion, Decision } from '../../types'
-import { Brain, TrendingUp, TrendingDown, Minus, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Brain, TrendingUp, TrendingDown, Minus, AlertTriangle, RefreshCw, Zap } from 'lucide-react'
 
-interface Props {
-  ticker: string
-}
+interface Props { ticker: string }
 
 const DECISION_CONFIG: Record<Decision, { color: string; icon: React.ReactNode; bg: string }> = {
-  BUY: { color: 'text-bull', bg: 'bg-bull/10 border-bull/30', icon: <TrendingUp size={18} /> },
-  SELL: { color: 'text-bear', bg: 'bg-bear/10 border-bear/30', icon: <TrendingDown size={18} /> },
-  HOLD: { color: 'text-warn', bg: 'bg-warn/10 border-warn/30', icon: <Minus size={18} /> },
-  CREDIT_SPREAD: { color: 'text-accent', bg: 'bg-accent/10 border-accent/30', icon: <TrendingUp size={18} /> },
-  AVOID: { color: 'text-bear', bg: 'bg-bear/10 border-bear/30', icon: <AlertTriangle size={18} /> },
+  BUY:           { color: 'text-bull',   bg: 'bg-bull/10 border-bull/30',     icon: <TrendingUp   size={18} /> },
+  SELL:          { color: 'text-bear',   bg: 'bg-bear/10 border-bear/30',     icon: <TrendingDown size={18} /> },
+  HOLD:          { color: 'text-warn',   bg: 'bg-warn/10 border-warn/30',     icon: <Minus        size={18} /> },
+  CREDIT_SPREAD: { color: 'text-accent', bg: 'bg-accent/10 border-accent/30', icon: <TrendingUp   size={18} /> },
+  AVOID:         { color: 'text-bear',   bg: 'bg-bear/10 border-bear/30',     icon: <AlertTriangle size={18} /> },
 }
 
 export function AIAssistant({ ticker }: Props) {
   const [suggestion, setSuggestion] = useState<AISuggestion | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [loading, setLoading]       = useState(false)
+  const [error, setError]           = useState('')
+  const [attempt, setAttempt]       = useState(0)
+  const activeRef = useRef(false)
 
-  // Clear stale result when user switches ticker
   useEffect(() => {
     setSuggestion(null)
     setError('')
   }, [ticker])
 
+  // Auto-analyze on mount and ticker change
+  useEffect(() => {
+    if (ticker) fetchSuggestion()
+  }, [ticker])
+
   async function fetchSuggestion() {
-    if (!ticker) return
+    if (!ticker || activeRef.current) return
+    activeRef.current = true
     setLoading(true)
     setError('')
-    try {
-      const s = await api.autoSuggest(ticker)
-      setSuggestion(s)
-    } catch (e) {
-      setError('Failed to fetch AI suggestion. Is the backend running?')
-    } finally {
-      setLoading(false)
+    setAttempt(0)
+
+    // Retry up to 3 times to handle Render cold-start
+    for (let i = 0; i < 3; i++) {
+      setAttempt(i + 1)
+      try {
+        const s = await api.autoSuggest(ticker)
+        setSuggestion(s)
+        setError('')
+        setLoading(false)
+        activeRef.current = false
+        return
+      } catch {
+        if (i < 2) await new Promise<void>(r => setTimeout(r, 5000))
+      }
     }
+
+    setError('Backend unreachable. Make sure it is running.')
+    setLoading(false)
+    activeRef.current = false
   }
 
   const cfg = suggestion ? DECISION_CONFIG[suggestion.decision] : null
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      <div className="flex items-center gap-2">
-        <Brain size={18} className="text-accent" />
-        <h2 className="text-sm font-semibold text-text uppercase tracking-widest">AI Trading Assistant</h2>
+    <div className="flex flex-col gap-3 h-full">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Brain size={16} className="text-accent" />
+          <h2 className="text-xs font-semibold text-text uppercase tracking-widest">AI Assistant</h2>
+        </div>
+        <button
+          onClick={fetchSuggestion}
+          disabled={loading || !ticker}
+          title="Re-analyze"
+          className="flex items-center gap-1 text-xs text-muted hover:text-accent transition-colors disabled:opacity-40"
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+        </button>
       </div>
 
-      <button
-        onClick={fetchSuggestion}
-        disabled={loading || !ticker}
-        className="flex items-center justify-center gap-2 py-2 rounded-lg bg-accent/10 border border-accent/30 text-accent text-xs font-semibold hover:bg-accent/20 transition-colors disabled:opacity-40"
-      >
-        <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-        {loading ? 'Analyzing...' : `Analyze ${ticker || '—'}`}
-      </button>
+      {/* Analyze button — shown when no result yet */}
+      {!suggestion && !loading && !error && (
+        <button
+          onClick={fetchSuggestion}
+          disabled={!ticker}
+          className="flex items-center justify-center gap-2 py-2 rounded-lg bg-accent/10 border border-accent/30 text-accent text-xs font-semibold hover:bg-accent/20 transition-colors disabled:opacity-40"
+        >
+          <Zap size={13} />
+          Analyze {ticker || '—'}
+        </button>
+      )}
 
-      {error && <p className="text-bear text-xs">{error}</p>}
+      {/* Loading state */}
+      {loading && (
+        <div className="flex flex-col items-center justify-center gap-2 py-6">
+          <RefreshCw size={18} className="text-accent animate-spin" />
+          <p className="text-muted text-xs">
+            {attempt > 1 ? `Retrying… (${attempt}/3)` : `Analyzing ${ticker}…`}
+          </p>
+          {attempt > 1 && (
+            <p className="text-muted text-xs text-center">Backend waking up,<br />please wait…</p>
+          )}
+        </div>
+      )}
 
-      {suggestion && cfg && (
+      {/* Error state */}
+      {error && !loading && (
+        <div className="flex flex-col items-center gap-2 py-3">
+          <AlertTriangle size={16} className="text-bear" />
+          <p className="text-bear text-xs text-center">{error}</p>
+          <button
+            onClick={fetchSuggestion}
+            className="text-xs text-accent border border-accent/30 px-3 py-1 rounded hover:bg-accent/10 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {suggestion && cfg && !loading && (
         <div className="flex flex-col gap-3 flex-1 overflow-y-auto pr-1">
-          {/* Decision Badge */}
+          {/* Decision badge */}
           <div className={`flex items-center gap-2 rounded-lg px-3 py-2 border ${cfg.bg}`}>
             <span className={cfg.color}>{cfg.icon}</span>
             <div>
@@ -95,7 +150,7 @@ export function AIAssistant({ ticker }: Props) {
             </span>
           </div>
 
-          {/* Confidence Bar */}
+          {/* Confidence bar */}
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-muted">
               <span>Confidence</span>
@@ -120,12 +175,14 @@ export function AIAssistant({ ticker }: Props) {
               ))}
             </ul>
           </div>
-        </div>
-      )}
 
-      {!suggestion && !loading && (
-        <div className="flex-1 flex items-center justify-center text-muted text-xs text-center">
-          Click "Analyze" to get an<br />AI-powered trade suggestion
+          {/* Re-analyze button at bottom */}
+          <button
+            onClick={fetchSuggestion}
+            className="flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-muted/20 text-muted text-xs hover:text-accent hover:border-accent/30 transition-colors mt-auto"
+          >
+            <RefreshCw size={11} /> Re-analyze
+          </button>
         </div>
       )}
     </div>
