@@ -23,4 +23,4 @@ def price(ticker: str):
 @router.get("/technicals/{ticker}")
 def technicals(ticker: str):
     data = compute_technicals(ticker.upper())
-    return {"ticker": ticker.upper(), "technicals": data.model_dump()}
+    return {"ticker": ticker.upper(), "technicals": data.dict()}
